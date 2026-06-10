@@ -2,27 +2,51 @@ name: OpenTimestamps Auto-Stamp
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main"]
     paths-ignore:
-      - 'ots-proofs/**'   # Prevent loops if the action commits proofs
+      - 'ots-proofs/**'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: timestamp-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   timestamp:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Install OpenTimestamps
         run: pip install opentimestamps-client
 
-      - name: Stamp commit hash
+      - name: Create timestamp proof for this commit
         run: |
-          COMMIT_HASH=$(git rev-parse HEAD)
           mkdir -p ots-proofs
-          echo "$COMMIT_HASH" > ots-proofs/$COMMIT_HASH.txt
-          ots stamp ots-proofs/$COMMIT_HASH.txt README.md
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git add ots-proofs/*.ots
-          git commit -m "[Auto] Add OpenTimestamps proof" --allow-empty || echo "No changes"
-          git push
+          COMMIT_HASH=$(git rev-parse HEAD)
+          TARGET_FILE="ots-proofs/$COMMIT_HASH.txt"
+
+          echo "$COMMIT_HASH" > "$TARGET_FILE"
+
+          # Always stamp the commit hash
+          ots stamp "$TARGET_FILE"
+
+          echo "Stamped commit: $COMMIT_HASH"
+
+      - name: Commit the new proof
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add ots-proofs/
+          if git diff --cached --quiet; then
+            echo "No new proof to commit"
+            exit 0
+          fi
+
+          git commit -m "[Auto] OpenTimestamps proof for commit $(git rev-parse --short HEAD)"
+          git push origin HEAD:main
