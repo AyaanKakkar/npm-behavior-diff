@@ -1,0 +1,28 @@
+name: OpenTimestamps Auto-Stamp
+
+on:
+  push:
+    branches: [ "main" ]
+    paths-ignore:
+      - 'ots-proofs/**'   # Prevent loops if the action commits proofs
+
+jobs:
+  timestamp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install OpenTimestamps
+        run: pip install opentimestamps-client
+
+      - name: Stamp commit hash
+        run: |
+          COMMIT_HASH=$(git rev-parse HEAD)
+          mkdir -p ots-proofs
+          echo "$COMMIT_HASH" > ots-proofs/$COMMIT_HASH.txt
+          ots stamp ots-proofs/$COMMIT_HASH.txt README.md
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add ots-proofs/*.ots
+          git commit -m "[Auto] Add OpenTimestamps proof" --allow-empty || echo "No changes"
+          git push
